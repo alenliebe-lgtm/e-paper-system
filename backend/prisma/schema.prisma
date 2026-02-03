@@ -1,0 +1,256 @@
+// Prisma 数据库模型定义
+// E-Paper 员工与项目全生命周期管理系统
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============ 用户与权限模型 ============
+
+// 用户表
+model User {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // 关联关系
+  roleId   Int  @map("role_id")
+  role     Role @relation(fields: [roleId], references: [id])
+  
+  profile  EmployeeProfile?
+  
+  // 作为项目经理管理的项目
+  managedProjects Project[] @relation("ProjectManager")
+  
+  // 发起的工作流
+  workflows WorkflowInstance[] @relation("Applicant")
+  
+  // 作为审批人的审批节点
+  approvalNodes ApprovalNode[] @relation("Approver")
+  
+  // 审计日志
+  auditLogs AuditLog[]
+
+  @@map("users")
+}
+
+// 用户状态枚举
+enum UserStatus {
+  ACTIVE    // 活跃
+  INACTIVE  // 停用
+  PENDING   // 待激活
+}
+
+// 角色表
+model Role {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // 关联关系
+  users       User[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+// 权限表
+model Permission {
+  id       Int    @id @default(autoincrement())
+  code     String @unique  // 权限代码，如 user:read, user:write
+  name     String          // 权限名称
+  resource String          // 资源类型，如 user, project, workflow
+  action   String          // 操作类型，如 read, write, delete
+
+  // 关联关系
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+// 角色-权限关联表
+model RolePermission {
+  roleId       Int @map("role_id")
+  permissionId Int @map("permission_id")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// ============ 员工与项目模型 ============
+
+// 员工档案表
+model EmployeeProfile {
+  id          Int      @id @default(autoincrement())
+  fullName    String   @map("full_name")
+  department  String
+  position    String
+  entryDate   DateTime @map("entry_date")
+  phone       String?
+  attachments Json?    // 附件信息，存储为 JSON
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // 关联关系
+  userId Int  @unique @map("user_id")
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("employee_profiles")
+}
+
+// 项目表
+model Project {
+  id          Int       @id @default(autoincrement())
+  projectName String    @map("project_name")
+  code        String    @unique  // 项目编码
+  description String?
+  startDate   DateTime  @map("start_date")
+  endDate     DateTime? @map("end_date")
+  status      ProjectStatus @default(ACTIVE)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  // 关联关系
+  pmId Int  @map("pm_id")
+  pm   User @relation("ProjectManager", fields: [pmId], references: [id])
+  
+  // 相关工作流
+  workflows WorkflowInstance[]
+
+  @@map("projects")
+}
+
+// 项目状态枚举
+enum ProjectStatus {
+  ACTIVE    // 进行中
+  COMPLETED // 已完成
+  SUSPENDED // 已暂停
+}
+
+// ============ 模板与工作流模型 ============
+
+// 审批模板表
+model Template {
+  id           Int      @id @default(autoincrement())
+  name         String
+  type         TemplateType
+  content      Json     // 模板内容，包含 checkbox 审批项等
+  version      Int      @default(1)
+  departmentId Int?     @map("department_id")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // 关联关系
+  workflows WorkflowInstance[]
+
+  @@map("templates")
+}
+
+// 模板类型枚举
+enum TemplateType {
+  ONBOARD   // 入职流程
+  OFFBOARD  // 离职流程
+}
+
+// 工作流实例表
+model WorkflowInstance {
+  id          Int            @id @default(autoincrement())
+  type        WorkflowType
+  currentStep Int            @default(1) @map("current_step")
+  status      WorkflowStatus @default(PENDING)
+  remark      String?        // 备注
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+
+  // 关联关系
+  templateId  Int      @map("template_id")
+  template    Template @relation(fields: [templateId], references: [id])
+  
+  applicantId Int  @map("applicant_id")
+  applicant   User @relation("Applicant", fields: [applicantId], references: [id])
+  
+  projectId   Int?    @map("project_id")
+  project     Project? @relation(fields: [projectId], references: [id])
+  
+  // 审批节点
+  approvalNodes ApprovalNode[]
+  
+  // 审计日志
+  auditLogs AuditLog[]
+
+  @@map("workflow_instances")
+}
+
+// 工作流类型枚举
+enum WorkflowType {
+  ONBOARD   // 入职
+  OFFBOARD  // 离职
+}
+
+// 工作流状态枚举
+enum WorkflowStatus {
+  PENDING   // 待处理
+  APPROVED  // 已通过
+  REJECTED  // 已拒绝
+  CANCELLED // 已取消
+}
+
+// 审批节点表
+model ApprovalNode {
+  id         Int              @id @default(autoincrement())
+  stepOrder  Int              @map("step_order")  // 审批顺序
+  status     ApprovalStatus   @default(PENDING)
+  comment    String?          // 审批意见
+  approvedAt DateTime?        @map("approved_at")
+  createdAt  DateTime         @default(now()) @map("created_at")
+
+  // 关联关系
+  workflowId Int              @map("workflow_id")
+  workflow   WorkflowInstance @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  
+  approverId Int  @map("approver_id")
+  approver   User @relation("Approver", fields: [approverId], references: [id])
+
+  @@map("approval_nodes")
+}
+
+// 审批节点状态枚举
+enum ApprovalStatus {
+  PENDING   // 待审批
+  APPROVED  // 已通过
+  REJECTED  // 已拒绝
+  SKIPPED   // 已跳过
+}
+
+// 审计日志表
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  action    String   // 操作类型
+  changes   Json?    // 变更内容
+  ipAddress String?  @map("ip_address")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // 关联关系
+  userId     Int              @map("user_id")
+  user       User             @relation(fields: [userId], references: [id])
+  
+  workflowId Int?             @map("workflow_id")
+  workflow   WorkflowInstance? @relation(fields: [workflowId], references: [id])
+
+  @@map("audit_logs")
+}

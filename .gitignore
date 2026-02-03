@@ -1,0 +1,59 @@
+# 依赖目录
+node_modules/
+.pnp/
+.pnp.js
+
+# 测试覆盖率
+coverage/
+
+# 构建输出
+.next/
+out/
+build/
+dist/
+
+# 环境变量文件
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env*.local
+
+# 日志文件
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDE 和编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 操作系统文件
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Prisma
+prisma/*.db
+prisma/*.db-journal
+
+# 调试日志
+logs/
+*.log
+
+# 临时文件
+tmp/
+temp/
+.cache/
+
+# TypeScript 缓存
+*.tsbuildinfo
