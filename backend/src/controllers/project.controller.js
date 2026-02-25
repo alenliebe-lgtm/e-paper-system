@@ -66,7 +66,7 @@ const createProject = asyncHandler(async (req, res) => {
  */
 const updateProject = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const data = req.body;
+    const data = { ...req.body, _operatorId: req.user.id };
 
     const project = await projectService.updateProject(parseInt(id, 10), data);
 
@@ -105,6 +105,27 @@ const getProjectStats = asyncHandler(async (req, res) => {
     });
 });
 
+/**
+ * 状态流转
+ * PATCH /api/projects/:id/transition
+ */
+const transitionStatus = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    const project = await projectService.transitionStatus(
+        parseInt(id, 10),
+        status,
+        req.user.id
+    );
+
+    res.json({
+        success: true,
+        message: '状态流转成功',
+        data: project,
+    });
+});
+
 module.exports = {
     getProjects,
     getProjectById,
@@ -112,4 +133,5 @@ module.exports = {
     updateProject,
     deleteProject,
     getProjectStats,
+    transitionStatus,
 };

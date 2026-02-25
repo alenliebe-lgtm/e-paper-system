@@ -57,3 +57,19 @@ temp/
 
 # TypeScript 缓存
 *.tsbuildinfo
+
+# Windows 保留设备名（防止误创建）
+nul
+NUL
+
+# AI 助手相关文件
+.agent/
+.agents/
+.gemini/
+skills-lock.json
+task.md
+implementation_plan.md
+walkthrough.md
+
+# 备份目录
+frontend-react-backup/

@@ -1,188 +1,145 @@
 /**
- * 模板服务
- * 处理审批模板相关的业务逻辑
+ * 模板服务层（重构后）
+ * 使用通用分页和辅助函数消除重复代码
  */
-
 const prisma = require('../config/database');
 const { AppError } = require('../middlewares/error.middleware');
+const { paginate } = require('../utils/pagination.helper');
+const { findOrFail } = require('../utils/service.helper');
+const logger = require('../utils/logger');
 
 /**
- * 获取模板列表（分页）
- * @param {Object} options - 查询选项
- * @returns {Object} 分页结果
+ * 获取模板列表（分页查询）
  */
-async function getTemplates(options = {}) {
-    const {
-        page = 1,
-        pageSize = 10,
-        type,
-        isActive,
-        keyword,
-        sortBy = 'createdAt',
-        sortOrder = 'desc',
-    } = options;
-
-    const skip = (page - 1) * pageSize;
+async function getTemplates(query) {
+    const { page = 1, pageSize = 10, type, isActive, search, sortBy = 'createdAt', sortOrder = 'desc' } = query;
 
     // 构建查询条件
     const where = {};
-
-    if (type) {
-        where.type = type;
+    if (type) where.type = type;
+    if (isActive !== undefined) where.isActive = isActive === 'true';
+    if (search) {
+        where.name = { contains: search, mode: 'insensitive' };
     }
 
-    if (isActive !== undefined) {
-        where.isActive = isActive === 'true' || isActive === true;
-    }
-
-    if (keyword) {
-        where.name = { contains: keyword, mode: 'insensitive' };
-    }
-
-    // 查询数据
-    const [templates, total] = await Promise.all([
-        prisma.template.findMany({
-            where,
-            skip,
-            take: pageSize,
-            orderBy: { [sortBy]: sortOrder },
-        }),
-        prisma.template.count({ where }),
-    ]);
-
-    return {
-        data: templates,
-        pagination: {
-            page,
-            pageSize,
-            total,
-            totalPages: Math.ceil(total / pageSize),
+    return paginate('template', {
+        page: parseInt(page, 10),
+        pageSize: parseInt(pageSize, 10),
+        where,
+        orderBy: { [sortBy]: sortOrder },
+        include: {
+            creator: { select: { id: true, username: true } },
         },
-    };
+    });
 }
 
 /**
  * 获取模板详情
- * @param {number} id - 模板 ID
- * @returns {Object} 模板信息
  */
 async function getTemplateById(id) {
-    const template = await prisma.template.findUnique({
-        where: { id },
+    return findOrFail('template', parseInt(id, 10), {
+        errorMsg: '模板不存在',
+        errorCode: 'TEMPLATE_NOT_FOUND',
+        include: {
+            creator: { select: { id: true, username: true } },
+        },
     });
-
-    if (!template) {
-        throw new AppError('模板不存在', 404, 'TEMPLATE_NOT_FOUND');
-    }
-
-    return template;
 }
 
 /**
  * 创建模板
- * @param {Object} data - 模板数据
- * @returns {Object} 创建的模板
  */
-async function createTemplate(data) {
+async function createTemplate(data, userId) {
     const template = await prisma.template.create({
         data: {
-            name: data.name,
-            type: data.type,
-            content: data.content,
-            departmentId: data.departmentId,
-            version: 1,
-            isActive: true,
+            ...data,
+            creatorId: userId,
+            content: data.content || {},
+        },
+        include: {
+            creator: { select: { id: true, username: true } },
         },
     });
 
+    logger.info('TemplateService', `创建模板: ${template.name}`);
     return template;
 }
 
 /**
  * 更新模板
- * 采用版本控制，每次更新创建新版本
- * @param {number} id - 模板 ID
- * @param {Object} data - 更新数据
- * @returns {Object} 更新后的模板
  */
 async function updateTemplate(id, data) {
-    // 获取当前模板
-    const existing = await prisma.template.findUnique({
-        where: { id },
+    const templateId = parseInt(id, 10);
+
+    const existingTemplate = await findOrFail('template', templateId, {
+        errorMsg: '模板不存在',
+        errorCode: 'TEMPLATE_NOT_FOUND',
     });
 
-    if (!existing) {
-        throw new AppError('模板不存在', 404, 'TEMPLATE_NOT_FOUND');
-    }
-
-    // 如果模板内容有变化，增加版本号
-    let newVersion = existing.version;
-    if (data.content && JSON.stringify(data.content) !== JSON.stringify(existing.content)) {
-        newVersion = existing.version + 1;
+    // 如果修改了模板内容，自动升级版本号
+    const updateData = { ...data };
+    if (data.content && JSON.stringify(data.content) !== JSON.stringify(existingTemplate.content)) {
+        updateData.version = existingTemplate.version + 1;
     }
 
     const template = await prisma.template.update({
-        where: { id },
-        data: {
-            ...data,
-            version: newVersion,
+        where: { id: templateId },
+        data: updateData,
+        include: {
+            creator: { select: { id: true, username: true } },
         },
     });
 
+    logger.info('TemplateService', `更新模板: ${template.name} v${template.version}`);
     return template;
 }
 
 /**
  * 停用模板
- * @param {number} id - 模板 ID
- * @returns {Object} 更新后的模板
  */
 async function deactivateTemplate(id) {
-    const existing = await prisma.template.findUnique({
-        where: { id },
+    const templateId = parseInt(id, 10);
+
+    await findOrFail('template', templateId, {
+        errorMsg: '模板不存在',
+        errorCode: 'TEMPLATE_NOT_FOUND',
     });
 
-    if (!existing) {
-        throw new AppError('模板不存在', 404, 'TEMPLATE_NOT_FOUND');
-    }
-
-    return prisma.template.update({
-        where: { id },
+    const template = await prisma.template.update({
+        where: { id: templateId },
         data: { isActive: false },
     });
+
+    logger.info('TemplateService', `停用模板: ${template.name}`);
+    return template;
 }
 
 /**
  * 启用模板
- * @param {number} id - 模板 ID
- * @returns {Object} 更新后的模板
  */
 async function activateTemplate(id) {
-    const existing = await prisma.template.findUnique({
-        where: { id },
+    const templateId = parseInt(id, 10);
+
+    await findOrFail('template', templateId, {
+        errorMsg: '模板不存在',
+        errorCode: 'TEMPLATE_NOT_FOUND',
     });
 
-    if (!existing) {
-        throw new AppError('模板不存在', 404, 'TEMPLATE_NOT_FOUND');
-    }
-
-    return prisma.template.update({
-        where: { id },
+    const template = await prisma.template.update({
+        where: { id: templateId },
         data: { isActive: true },
     });
+
+    logger.info('TemplateService', `启用模板: ${template.name}`);
+    return template;
 }
 
 /**
- * 获取活跃的模板列表（用于下拉选择）
- * @param {string} type - 模板类型
- * @returns {Array} 模板列表
+ * 获取激活的模板列表（用于下拉选择）
  */
 async function getActiveTemplates(type) {
     const where = { isActive: true };
-
-    if (type) {
-        where.type = type;
-    }
+    if (type) where.type = type;
 
     return prisma.template.findMany({
         where,

@@ -77,4 +77,14 @@ router.delete('/:id',
     projectController.deleteProject
 );
 
+/**
+ * @route   PATCH /api/projects/:id/transition
+ * @desc    项目状态流转
+ * @access  Private (project:write)
+ */
+router.patch('/:id/transition',
+    authorize('project:write'),
+    projectController.transitionStatus
+);
+
 module.exports = router;

@@ -14,6 +14,16 @@ const projectRoutes = require('./routes/project.routes');
 const workflowRoutes = require('./routes/workflow.routes');
 const templateRoutes = require('./routes/template.routes');
 const uploadRoutes = require('./routes/upload.routes');
+const alertRoutes = require('./routes/alert.routes');
+const versionRoutes = require('./routes/version.routes');
+const materialRoutes = require('./routes/material.routes');
+const dashboardRoutes = require('./routes/dashboard.routes');
+const exportRoutes = require('./routes/export.routes');
+
+// 导入服务
+const cacheService = require('./services/cache.service');
+const cron = require('node-cron');
+const alertService = require('./services/alert.service');
 
 // 导入中间件
 const { errorHandler } = require('./middlewares/error.middleware');
@@ -55,6 +65,11 @@ app.use('/api/projects', projectRoutes);
 app.use('/api/workflows', workflowRoutes);
 app.use('/api/templates', templateRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/alerts', alertRoutes);
+app.use('/api/versions', versionRoutes);
+app.use('/api/materials', materialRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/export', exportRoutes);
 
 // ============ 错误处理 ============
 
@@ -74,7 +89,7 @@ app.use(errorHandler);
 
 const PORT = config.server.port;
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`
 ╔════════════════════════════════════════════════════════════╗
 ║                   E-Paper 管理系统                          ║
@@ -84,6 +99,20 @@ app.listen(PORT, () => {
 ║  时间: ${new Date().toLocaleString('zh-CN')}                 ║
 ╚════════════════════════════════════════════════════════════╝
   `);
+
+    // 初始化 Redis 缓存
+    await cacheService.initRedis();
+
+    // 定时任务：每小时检查里程碑逾期预警
+    cron.schedule('0 * * * *', async () => {
+        try {
+            await alertService.checkMilestoneOverdue();
+            await alertService.checkLowStock();
+        } catch (error) {
+            console.error('定时预警任务执行失败:', error);
+        }
+    });
+    console.log('  ✓ 定时预警任务已启动（每小时检查一次）');
 });
 
 module.exports = app;

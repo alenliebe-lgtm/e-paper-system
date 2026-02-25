@@ -27,6 +27,10 @@ async function main() {
   const templates = await createDefaultTemplates();
   console.log(`创建了 ${templates.length} 个默认模板`);
 
+  // 创建示例物料数据
+  const materials = await createSampleMaterials();
+  console.log(`创建了 ${materials.length} 个示例物料`);
+
   console.log('种子数据初始化完成!');
 }
 
@@ -37,28 +41,40 @@ async function createPermissions() {
     { code: 'user:read', name: '查看用户', resource: 'user', action: 'read' },
     { code: 'user:write', name: '编辑用户', resource: 'user', action: 'write' },
     { code: 'user:delete', name: '删除用户', resource: 'user', action: 'delete' },
-    
+
     // 员工管理权限
     { code: 'employee:read', name: '查看员工', resource: 'employee', action: 'read' },
     { code: 'employee:write', name: '编辑员工', resource: 'employee', action: 'write' },
     { code: 'employee:delete', name: '删除员工', resource: 'employee', action: 'delete' },
-    
+
     // 项目管理权限
     { code: 'project:read', name: '查看项目', resource: 'project', action: 'read' },
     { code: 'project:write', name: '编辑项目', resource: 'project', action: 'write' },
     { code: 'project:delete', name: '删除项目', resource: 'project', action: 'delete' },
-    
+
     // 工作流权限
     { code: 'workflow:read', name: '查看工作流', resource: 'workflow', action: 'read' },
     { code: 'workflow:write', name: '发起工作流', resource: 'workflow', action: 'write' },
     { code: 'workflow:approve', name: '审批工作流', resource: 'workflow', action: 'approve' },
-    
+
     // 模板管理权限
     { code: 'template:read', name: '查看模板', resource: 'template', action: 'read' },
     { code: 'template:write', name: '编辑模板', resource: 'template', action: 'write' },
-    
+
     // 系统管理权限
     { code: 'system:admin', name: '系统管理', resource: 'system', action: 'admin' },
+
+    // 驾驶舱/报表权限
+    { code: 'dashboard:read', name: '查看驾驶舱', resource: 'dashboard', action: 'read' },
+    { code: 'export:read', name: '导出报表', resource: 'export', action: 'read' },
+
+    // 物料管理权限
+    { code: 'material:read', name: '查看物料', resource: 'material', action: 'read' },
+    { code: 'material:write', name: '编辑物料', resource: 'material', action: 'write' },
+    { code: 'material:delete', name: '删除物料', resource: 'material', action: 'delete' },
+
+    // 预警管理权限
+    { code: 'alert:read', name: '查看预警', resource: 'alert', action: 'read' },
   ];
 
   const permissions = [];
@@ -90,6 +106,9 @@ async function createRoles(permissions) {
         'project:read', 'project:write',
         'workflow:read', 'workflow:write', 'workflow:approve',
         'template:read',
+        'dashboard:read', 'export:read',
+        'material:read', 'material:write',
+        'alert:read',
       ],
     },
     staff: {
@@ -99,6 +118,8 @@ async function createRoles(permissions) {
         'employee:read',
         'project:read',
         'workflow:read', 'workflow:write',
+        'material:read',
+        'alert:read',
       ],
     },
     it: {
@@ -108,12 +129,26 @@ async function createRoles(permissions) {
         'user:read', 'employee:read',
         'project:read',
         'workflow:read', 'workflow:approve',
+        'material:read', 'material:write',
+        'alert:read',
+      ],
+    },
+    finance: {
+      name: 'Finance',
+      description: '财务审核人',
+      permissionCodes: [
+        'employee:read',
+        'project:read',
+        'workflow:read', 'workflow:approve',
+        'dashboard:read', 'export:read',
+        'material:read',
+        'alert:read',
       ],
     },
   };
 
   const roles = {};
-  
+
   for (const [key, config] of Object.entries(rolesConfig)) {
     // 创建角色
     const role = await prisma.role.upsert({
@@ -148,7 +183,7 @@ async function createRoles(permissions) {
 // 创建管理员用户
 async function createAdminUser(adminRole) {
   const passwordHash = await bcrypt.hash('admin123', 10);
-  
+
   return prisma.user.upsert({
     where: { username: 'admin' },
     update: {},
@@ -205,6 +240,64 @@ async function createDefaultTemplates() {
       version: 1,
       isActive: true,
     },
+    {
+      name: '项目立项审批模板',
+      type: 'PROJECT_APPROVAL',
+      content: {
+        title: '项目立项审批',
+        checkItems: [
+          { id: 1, label: '项目可行性评估', required: true },
+          { id: 2, label: '预算审核', required: true },
+          { id: 3, label: '人员配置确认', required: true },
+          { id: 4, label: '风险评估', required: false },
+        ],
+        approvalSteps: [
+          { step: 1, role: 'PM', name: '项目经理审批' },
+          { step: 2, role: 'Finance', name: '财务审核' },
+          { step: 3, role: 'Admin', name: '管理层批准' },
+        ],
+      },
+      version: 1,
+      isActive: true,
+    },
+    {
+      name: '项目变更审批模板',
+      type: 'CHANGE_REQUEST',
+      content: {
+        title: '项目变更审批',
+        checkItems: [
+          { id: 1, label: '变更原因说明', required: true },
+          { id: 2, label: '影响评估', required: true },
+          { id: 3, label: '预算变更确认', required: false },
+        ],
+        approvalSteps: [
+          { step: 1, role: 'PM', name: '项目经理审批' },
+          { step: 2, role: 'Admin', name: '管理层批准' },
+        ],
+      },
+      version: 1,
+      isActive: true,
+    },
+    {
+      name: '项目验收审批模板',
+      type: 'ACCEPTANCE',
+      content: {
+        title: '项目验收审批',
+        checkItems: [
+          { id: 1, label: '交付物检查', required: true },
+          { id: 2, label: '质量验收', required: true },
+          { id: 3, label: '客户签字确认', required: true },
+          { id: 4, label: '结算确认', required: true },
+        ],
+        approvalSteps: [
+          { step: 1, role: 'PM', name: '项目经理确认' },
+          { step: 2, role: 'Finance', name: '财务结算' },
+          { step: 3, role: 'Admin', name: '管理层确认' },
+        ],
+      },
+      version: 1,
+      isActive: true,
+    },
   ];
 
   const templates = [];
@@ -217,6 +310,68 @@ async function createDefaultTemplates() {
     templates.push(template);
   }
   return templates;
+}
+
+// 创建示例物料数据
+async function createSampleMaterials() {
+  const materialsData = [
+    {
+      name: 'E-Paper 电子纸屏幕 7.5寸',
+      code: 'MAT-EP-750',
+      category: '电子纸屏',
+      unit: '片',
+      stock: 100,
+      minStock: 20,
+      description: '7.5 英寸电子纸显示屏，黑白双色',
+    },
+    {
+      name: 'E-Paper 电子纸屏幕 4.2寸',
+      code: 'MAT-EP-420',
+      category: '电子纸屏',
+      unit: '片',
+      stock: 200,
+      minStock: 50,
+      description: '4.2 英寸电子纸显示屏，黑白双色',
+    },
+    {
+      name: 'ESP32 主控板',
+      code: 'MAT-MCU-ESP32',
+      category: '主控板',
+      unit: '块',
+      stock: 150,
+      minStock: 30,
+      description: 'ESP32-S3 开发板，支持 Wi-Fi/BLE',
+    },
+    {
+      name: '锂电池 3.7V 2000mAh',
+      code: 'MAT-BAT-2000',
+      category: '电池',
+      unit: '块',
+      stock: 300,
+      minStock: 50,
+      description: '3.7V 聚合物锂电池，2000mAh 容量',
+    },
+    {
+      name: '外壳模具（A款）',
+      code: 'MAT-CASE-A',
+      category: '外壳',
+      unit: '套',
+      stock: 80,
+      minStock: 15,
+      description: '注塑外壳 A 款，适配 7.5 寸屏幕',
+    },
+  ];
+
+  const materials = [];
+  for (const data of materialsData) {
+    const material = await prisma.material.upsert({
+      where: { code: data.code },
+      update: data,
+      create: data,
+    });
+    materials.push(material);
+  }
+  return materials;
 }
 
 main()

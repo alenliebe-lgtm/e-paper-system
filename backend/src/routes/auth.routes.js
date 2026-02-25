@@ -19,6 +19,13 @@ const { authValidation } = require('../middlewares/validation.middleware');
 router.post('/register', authValidation.register, authController.register);
 
 /**
+ * @route   GET /api/auth/captcha
+ * @desc    获取登录验证码
+ * @access  Public
+ */
+router.get('/captcha', authController.getCaptcha);
+
+/**
  * @route   POST /api/auth/login
  * @desc    用户登录
  * @access  Public

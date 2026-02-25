@@ -4,6 +4,7 @@
  */
 
 const authService = require('../services/auth.service');
+const captchaService = require('../services/captcha.service');
 const { asyncHandler } = require('../middlewares/error.middleware');
 
 /**
@@ -28,11 +29,33 @@ const register = asyncHandler(async (req, res) => {
 });
 
 /**
+ * 获取验证码
+ * GET /api/auth/captcha
+ */
+const getCaptcha = asyncHandler(async (req, res) => {
+    const result = await captchaService.generateCaptcha();
+
+    res.json({
+        success: true,
+        data: result,
+    });
+});
+
+/**
  * 用户登录
  * POST /api/auth/login
  */
 const login = asyncHandler(async (req, res) => {
-    const { username, password } = req.body;
+    const { username, password, captchaId, captchaCode } = req.body;
+
+    // 校验验证码
+    const captchaValid = await captchaService.verifyCaptcha(captchaId, captchaCode);
+    if (!captchaValid) {
+        return res.status(400).json({
+            success: false,
+            message: '验证码错误或已过期',
+        });
+    }
 
     const result = await authService.login(username, password);
 
@@ -105,6 +128,7 @@ const logout = asyncHandler(async (req, res) => {
 
 module.exports = {
     register,
+    getCaptcha,
     login,
     refresh,
     changePassword,

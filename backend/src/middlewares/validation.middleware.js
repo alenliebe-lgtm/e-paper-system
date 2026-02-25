@@ -58,6 +58,11 @@ const authValidation = {
             .notEmpty().withMessage('用户名/邮箱不能为空'),
         body('password')
             .notEmpty().withMessage('密码不能为空'),
+        body('captchaId')
+            .notEmpty().withMessage('验证码 ID 不能为空'),
+        body('captchaCode')
+            .trim()
+            .notEmpty().withMessage('请输入验证码'),
         validate,
     ],
 

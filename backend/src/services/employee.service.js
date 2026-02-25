@@ -1,207 +1,141 @@
 /**
- * 员工服务
- * 处理员工档案相关的业务逻辑
+ * 员工服务层（重构后）
+ * 使用通用分页和辅助函数消除重复代码
  */
-
 const prisma = require('../config/database');
 const { AppError } = require('../middlewares/error.middleware');
+const { paginate } = require('../utils/pagination.helper');
+const { findOrFail, parseDateFields } = require('../utils/service.helper');
+const logger = require('../utils/logger');
 
 /**
- * 获取员工列表（分页）
- * @param {Object} options - 查询选项
- * @returns {Object} 分页结果
+ * 获取员工列表（分页查询）
  */
-async function getEmployees(options = {}) {
-    const {
-        page = 1,
-        pageSize = 10,
-        department,
-        keyword,
-        sortBy = 'createdAt',
-        sortOrder = 'desc',
-    } = options;
-
-    const skip = (page - 1) * pageSize;
+async function getEmployees(query) {
+    const { page = 1, pageSize = 10, department, search, sortBy = 'createdAt', sortOrder = 'desc' } = query;
 
     // 构建查询条件
     const where = {};
-
-    if (department) {
-        where.department = department;
-    }
-
-    if (keyword) {
+    if (department) where.department = department;
+    if (search) {
         where.OR = [
-            { fullName: { contains: keyword, mode: 'insensitive' } },
-            { position: { contains: keyword, mode: 'insensitive' } },
+            { fullName: { contains: search, mode: 'insensitive' } },
+            { position: { contains: search, mode: 'insensitive' } },
         ];
     }
 
-    // 查询数据
-    const [employees, total] = await Promise.all([
-        prisma.employeeProfile.findMany({
-            where,
-            skip,
-            take: pageSize,
-            orderBy: { [sortBy]: sortOrder },
-            include: {
-                user: {
-                    select: {
-                        id: true,
-                        username: true,
-                        email: true,
-                        status: true,
-                    },
-                },
-            },
-        }),
-        prisma.employeeProfile.count({ where }),
-    ]);
-
-    return {
-        data: employees,
-        pagination: {
-            page,
-            pageSize,
-            total,
-            totalPages: Math.ceil(total / pageSize),
+    return paginate('employeeProfile', {
+        page: parseInt(page, 10),
+        pageSize: parseInt(pageSize, 10),
+        where,
+        orderBy: { [sortBy]: sortOrder },
+        include: {
+            user: { select: { id: true, username: true, email: true } },
         },
-    };
+    });
 }
 
 /**
  * 获取员工详情
- * @param {number} id - 员工 ID
- * @returns {Object} 员工信息
  */
 async function getEmployeeById(id) {
-    const employee = await prisma.employeeProfile.findUnique({
-        where: { id },
+    return findOrFail('employeeProfile', parseInt(id, 10), {
+        errorMsg: '员工不存在',
+        errorCode: 'EMPLOYEE_NOT_FOUND',
         include: {
             user: {
                 select: {
                     id: true,
                     username: true,
                     email: true,
-                    status: true,
-                    role: true,
+                    role: { select: { name: true } },
                 },
             },
         },
     });
-
-    if (!employee) {
-        throw new AppError('员工不存在', 404, 'EMPLOYEE_NOT_FOUND');
-    }
-
-    return employee;
 }
 
 /**
  * 创建员工档案
- * @param {Object} data - 员工数据
- * @param {number} userId - 关联的用户 ID
- * @returns {Object} 创建的员工信息
  */
 async function createEmployee(data, userId) {
     // 检查用户是否已有档案
-    const existingProfile = await prisma.employeeProfile.findUnique({
+    const existing = await prisma.employeeProfile.findUnique({
         where: { userId },
     });
 
-    if (existingProfile) {
-        throw new AppError('该用户已有员工档案', 409, 'PROFILE_EXISTS');
+    if (existing) {
+        throw new AppError('该用户已有员工档案', 400, 'EMPLOYEE_EXISTS');
     }
 
+    const employeeData = parseDateFields({ ...data, userId }, ['entryDate', 'exitDate']);
+
     const employee = await prisma.employeeProfile.create({
-        data: {
-            ...data,
-            userId,
-            entryDate: new Date(data.entryDate),
-        },
+        data: employeeData,
         include: {
-            user: {
-                select: {
-                    id: true,
-                    username: true,
-                    email: true,
-                },
-            },
+            user: { select: { id: true, username: true, email: true } },
         },
     });
 
+    logger.info('EmployeeService', `创建员工档案: ${employee.fullName}`);
     return employee;
 }
 
 /**
  * 更新员工档案
- * @param {number} id - 员工 ID
- * @param {Object} data - 更新数据
- * @returns {Object} 更新后的员工信息
  */
 async function updateEmployee(id, data) {
+    const employeeId = parseInt(id, 10);
+
     // 检查员工是否存在
-    const existing = await prisma.employeeProfile.findUnique({
-        where: { id },
+    await findOrFail('employeeProfile', employeeId, {
+        errorMsg: '员工不存在',
+        errorCode: 'EMPLOYEE_NOT_FOUND',
     });
 
-    if (!existing) {
-        throw new AppError('员工不存在', 404, 'EMPLOYEE_NOT_FOUND');
-    }
-
-    // 处理日期字段
-    if (data.entryDate) {
-        data.entryDate = new Date(data.entryDate);
-    }
+    const employeeData = parseDateFields(data, ['entryDate', 'exitDate']);
 
     const employee = await prisma.employeeProfile.update({
-        where: { id },
-        data,
+        where: { id: employeeId },
+        data: employeeData,
         include: {
-            user: {
-                select: {
-                    id: true,
-                    username: true,
-                    email: true,
-                },
-            },
+            user: { select: { id: true, username: true, email: true } },
         },
     });
 
+    logger.info('EmployeeService', `更新员工档案: ${employee.fullName}`);
     return employee;
 }
 
 /**
  * 删除员工档案
- * @param {number} id - 员工 ID
  */
 async function deleteEmployee(id) {
-    const existing = await prisma.employeeProfile.findUnique({
-        where: { id },
+    const employeeId = parseInt(id, 10);
+
+    // 检查员工是否存在
+    await findOrFail('employeeProfile', employeeId, {
+        errorMsg: '员工不存在',
+        errorCode: 'EMPLOYEE_NOT_FOUND',
     });
 
-    if (!existing) {
-        throw new AppError('员工不存在', 404, 'EMPLOYEE_NOT_FOUND');
-    }
+    await prisma.employeeProfile.delete({ where: { id: employeeId } });
 
-    await prisma.employeeProfile.delete({
-        where: { id },
-    });
+    logger.info('EmployeeService', `删除员工档案 ID: ${employeeId}`);
+    return { message: '员工档案已删除' };
 }
 
 /**
  * 获取部门列表
- * @returns {Array} 部门列表
  */
 async function getDepartments() {
     const departments = await prisma.employeeProfile.findMany({
-        select: {
-            department: true,
-        },
+        select: { department: true },
         distinct: ['department'],
+        orderBy: { department: 'asc' },
     });
 
-    return departments.map(d => d.department);
+    return departments.map((d) => d.department);
 }
 
 module.exports = {
