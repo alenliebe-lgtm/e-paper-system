@@ -4,6 +4,25 @@
  */
 const prisma = require('../config/database');
 
+const DEFAULT_PAGE = 1;
+const DEFAULT_PAGE_SIZE = 10;
+const MAX_PAGE_SIZE = 100;
+
+function toPositiveInteger(value, fallback) {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function normalizePagination(page, pageSize) {
+    const safePage = toPositiveInteger(page, DEFAULT_PAGE);
+    const requestedPageSize = toPositiveInteger(pageSize, DEFAULT_PAGE_SIZE);
+
+    return {
+        page: safePage,
+        pageSize: Math.min(requestedPageSize, MAX_PAGE_SIZE),
+    };
+}
+
 /**
  * 通用分页查询
  * @param {string} modelName - Prisma 模型名称（如 'employeeProfile'）
@@ -26,14 +45,15 @@ async function paginate(modelName, options = {}) {
         select,
     } = options;
 
-    const skip = (page - 1) * pageSize;
+    const normalized = normalizePagination(page, pageSize);
+    const skip = (normalized.page - 1) * normalized.pageSize;
 
     // 构建查询参数
     const queryArgs = {
         where,
         orderBy,
         skip,
-        take: pageSize,
+        take: normalized.pageSize,
     };
 
     // 可选参数
@@ -49,14 +69,15 @@ async function paginate(modelName, options = {}) {
     return {
         data,
         pagination: {
-            page,
-            pageSize,
+            page: normalized.page,
+            pageSize: normalized.pageSize,
             total,
-            totalPages: Math.ceil(total / pageSize),
+            totalPages: Math.ceil(total / normalized.pageSize),
         },
     };
 }
 
 module.exports = {
     paginate,
+    normalizePagination,
 };
